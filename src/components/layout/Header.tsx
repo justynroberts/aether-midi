@@ -1,8 +1,13 @@
 // MIT License - Copyright (c) fintonlabs.com
 import { useAppStore } from '../../state/useAppStore'
 import { useEngineStore } from '../../state/useEngineStore'
+import { AetherWordmark } from '../brand/AetherLogo'
 
-export function Header() {
+interface Props {
+  onHelpOpen: () => void
+}
+
+export function Header({ onHelpOpen }: Props) {
   const status = useEngineStore((s) => s.status)
   const {
     selectedPortId, availablePorts, setSelectedPort,
@@ -16,9 +21,9 @@ export function Header() {
   return (
     <header className="flex items-center justify-between px-4 h-12 border-b border-[var(--border)] bg-[var(--surface)] shrink-0 gap-3">
       <div className="flex items-center gap-3">
-        <span className="font-semibold tracking-tight text-sm">AETHER MIDI</span>
+        <AetherWordmark />
         <span
-          className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
+          className={`text-[10px] mono px-2 py-0.5 rounded-full border ${
             isLive
               ? 'bg-[var(--accent-dim)] border-[var(--accent)]/40 text-[var(--accent)]'
               : 'bg-[var(--surface-2)] border-[var(--border)] text-[var(--muted)]'
@@ -29,31 +34,21 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-2 ml-auto">
-        {/* View toggle */}
         <div className="flex items-center bg-[var(--surface-2)] border border-[var(--border)] rounded-lg p-0.5 gap-0.5">
           <button
             onClick={() => setViewMode('visualizer')}
             className={`text-xs px-2.5 py-1 rounded-md transition-colors ${
-              viewMode === 'visualizer'
-                ? 'bg-[var(--surface)] text-[var(--text)] shadow-sm'
-                : 'text-[var(--text-dim)] hover:text-[var(--text)]'
+              viewMode === 'visualizer' ? 'bg-[var(--surface)] text-[var(--text)] shadow-sm' : 'text-[var(--text-dim)] hover:text-[var(--text)]'
             }`}
-          >
-            Visualizer
-          </button>
+          >Visualizer</button>
           <button
             onClick={() => setViewMode('camera')}
             className={`text-xs px-2.5 py-1 rounded-md transition-colors ${
-              viewMode === 'camera'
-                ? 'bg-[var(--surface)] text-[var(--text)] shadow-sm'
-                : 'text-[var(--text-dim)] hover:text-[var(--text)]'
+              viewMode === 'camera' ? 'bg-[var(--surface)] text-[var(--text)] shadow-sm' : 'text-[var(--text-dim)] hover:text-[var(--text)]'
             }`}
-          >
-            Camera
-          </button>
+          >Camera</button>
         </div>
 
-        {/* MIDI port */}
         <select
           value={selectedPortId ?? ''}
           onChange={(e) => setSelectedPort(e.target.value || null)}
@@ -65,16 +60,19 @@ export function Header() {
           ))}
         </select>
 
-        {/* Theme toggle */}
         <button
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
           className="btn-ghost text-xs px-2"
           title="Toggle theme"
-        >
-          {theme === 'dark' ? '☀' : '◑'}
-        </button>
+        >{theme === 'dark' ? 'Light' : 'Dark'}</button>
 
-        <button onClick={toggleDebug} className={`btn-ghost text-xs ${showDebug ? 'text-[var(--accent)]!' : ''}`}>
+        <button
+          onClick={onHelpOpen}
+          className="btn-ghost text-xs px-2.5"
+          title="Help"
+        >Help</button>
+
+        <button onClick={toggleDebug} className={`btn-ghost text-xs ${showDebug ? 'text-[var(--accent)]' : ''}`}>
           Debug
         </button>
       </div>

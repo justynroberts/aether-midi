@@ -15,7 +15,7 @@ export function PermissionsGate({ onGranted }: Props) {
     setErrorMsg('')
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error('Camera API unavailable — page must be served over HTTPS. Open https://oracle.local:5747 instead of http.')
+        throw new Error('Camera API unavailable — page must be served over HTTPS (Chrome or Edge required).')
       }
       await navigator.mediaDevices.getUserMedia({ video: true })
 

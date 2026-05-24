@@ -6,6 +6,8 @@ import { Sidebar } from './components/layout/Sidebar'
 import { CameraView } from './components/camera/CameraView'
 import { HandVisualizerThree } from './components/visualizer/HandVisualizerThree'
 import { PermissionsGate } from './components/permissions/PermissionsGate'
+import { ProductTour } from './components/tour/ProductTour'
+import { HelpPanel } from './components/help/HelpPanel'
 import { useAppStore } from './state/useAppStore'
 import { useEngineStore } from './state/useEngineStore'
 import type { Landmark, TrackedHand } from './types'
@@ -14,6 +16,8 @@ export default function App() {
   const [permissionsGranted, setPermissionsGranted] = useState(false)
   const [landmarks, setLandmarks] = useState<Landmark[] | null>(null)
   const [trackedHands, setTrackedHands] = useState<TrackedHand[]>([])
+  const [showHelp, setShowHelp] = useState(false)
+  const [showTour, setShowTour] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
 
   const { setAvailablePorts, theme, viewMode } = useAppStore()
@@ -222,16 +226,15 @@ export default function App() {
   }, [permissionsGranted])
 
   if (!permissionsGranted) {
-    return <PermissionsGate onGranted={() => setPermissionsGranted(true)} />
+    return <PermissionsGate onGranted={() => { setPermissionsGranted(true); setShowTour(true) }} />
   }
 
   return (
     <div className="flex flex-col h-full">
-      <Header />
+      <Header onHelpOpen={() => setShowHelp(true)} />
       <div className="flex flex-1 min-h-0">
         <Sidebar />
         <main className="flex-1 p-4 overflow-hidden h-full flex flex-col">
-          {/* Video always in DOM — MediaPipe needs it; hidden in visualizer mode */}
           <div className={viewMode === 'camera' ? 'w-full h-full' : 'absolute opacity-0 pointer-events-none w-px h-px overflow-hidden'}>
             <CameraView videoRef={videoRef} landmarks={landmarks} />
           </div>
@@ -241,6 +244,8 @@ export default function App() {
         </main>
       </div>
       <Footer />
+      {showTour && <ProductTour onDone={() => setShowTour(false)} />}
+      {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
     </div>
   )
 }
