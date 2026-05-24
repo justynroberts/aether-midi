@@ -8,17 +8,38 @@ export interface Landmark {
 }
 
 export interface HandFeatures {
-  // Normalized 0-1 values derived from landmarks
-  pinchDistance: number       // thumb-index tip distance
-  spreadAmount: number        // palm spread (finger fan)
-  wristY: number              // vertical wrist position
-  wristX: number              // horizontal wrist position
-  indexCurl: number           // index finger curl 0=open 1=closed
+  // Position
+  wristY: number
+  wristX: number
+  wristRoll: number           // palm roll: 0=left, 0.5=down, 1=right
+
+  // Distance / spread
+  pinchDistance: number       // thumb-index tip distance (0=pinched)
+  spreadAmount: number        // finger fan spread
+
+  // Curl  (0 = straight, 1 = fully curled)
+  indexCurl: number
   middleCurl: number
   ringCurl: number
   pinkyCurl: number
   thumbCurl: number
-  fistClosure: number         // average curl across all fingers
+  fistClosure: number         // mean curl of 4 fingers
+
+  // Extension  (0 = curled, 1 = extended) — inverse of curls
+  indexUp: number
+  middleUp: number
+  ringUp: number
+  pinkyUp: number
+  thumbUp: number
+  fingersCount: number        // number of extended fingers / 5
+
+  // Named gesture confidence (0-1)
+  onePointing: number         // index only
+  peaceSign: number           // index + middle
+  threeFingers: number        // index + middle + ring
+  rockOn: number              // index + pinky, others curled
+  openHand: number            // all five extended
+  thumbsUp: number            // thumb out, all fingers curled
 }
 
 export type MidiCC = number   // 0-127
@@ -28,15 +49,35 @@ export type TriggerType = 'pinch' | 'fist' | 'spread' | 'point'
 
 export type FeatureKey = keyof HandFeatures
 
+export type HandTarget = 'any' | 'left' | 'right'
+export type FingerState = 'any' | 'up' | 'down'
+
+export interface GestureFilter {
+  thumb:  FingerState
+  index:  FingerState
+  middle: FingerState
+  ring:   FingerState
+  pinky:  FingerState
+}
+
 export interface MacroMapping {
   feature: FeatureKey
   ccNumber: MidiCC
   channel: MidiChannel
-  minVal: number  // input feature range min
-  maxVal: number  // input feature range max
-  midiMin: number // output midi range 0-127
+  minVal: number
+  maxVal: number
+  midiMin: number
   midiMax: number
-  smoothing: number // 0-1 exponential smoothing factor
+  smoothing: number
+  curve: number      // -1=log (slow start), 0=linear, +1=exp (fast start)
+  hand: HandTarget
+  gestureFilter: GestureFilter
+}
+
+export interface TrackedHand {
+  landmarks: Landmark[]
+  handedness: 'left' | 'right'
+  features: HandFeatures
 }
 
 export interface Macro {

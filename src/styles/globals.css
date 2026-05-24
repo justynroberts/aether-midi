@@ -76,7 +76,7 @@
     cursor: pointer;
   }
 
-  select, input[type=number], input[type=text] {
+  select, input[type=number], input[type=text], textarea {
     background: var(--surface-2);
     color: var(--text);
     border: 1px solid var(--border);

@@ -1,7 +1,9 @@
 // MIT License - Copyright (c) fintonlabs.com
 import { create } from 'zustand'
 import { persist, subscribeWithSelector } from 'zustand/middleware'
-import type { Macro, Preset, MidiPort } from '../types'
+import type { GestureFilter, Macro, Preset, MidiPort } from '../types'
+
+const NO_FILTER: GestureFilter = { thumb: 'any', index: 'any', middle: 'any', ring: 'any', pinky: 'any' }
 
 export type Theme = 'dark' | 'light'
 export type ViewMode = 'visualizer' | 'camera'
@@ -121,6 +123,9 @@ function makeNewMacro(index: number): Macro {
       midiMin: 0,
       midiMax: 127,
       smoothing: 0.6,
+      hand: 'any',
+      gestureFilter: { ...NO_FILTER },
+      curve: 0,
     },
     enabled: true,
     color: MACRO_COLORS[index % MACRO_COLORS.length],
@@ -142,6 +147,9 @@ function getDefaultMacros(): Macro[] {
         midiMin: 0,
         midiMax: 127,
         smoothing: 0.7,
+        hand: 'any',
+        gestureFilter: { ...NO_FILTER },
+        curve: 0,
       },
       enabled: true,
       color: '#00ff88',
@@ -159,6 +167,9 @@ function getDefaultMacros(): Macro[] {
         midiMin: 0,
         midiMax: 127,
         smoothing: 0.6,
+        hand: 'any',
+        gestureFilter: { ...NO_FILTER },
+        curve: 0,
       },
       enabled: true,
       color: '#00aaff',
@@ -176,6 +187,9 @@ function getDefaultMacros(): Macro[] {
         midiMin: 0,
         midiMax: 127,
         smoothing: 0.5,
+        hand: 'any',
+        gestureFilter: { ...NO_FILTER },
+        curve: 0,
       },
       enabled: false,
       color: '#ff6644',

@@ -4,19 +4,20 @@ import { Header } from './components/layout/Header'
 import { Footer } from './components/layout/Footer'
 import { Sidebar } from './components/layout/Sidebar'
 import { CameraView } from './components/camera/CameraView'
-import { HandVisualizer } from './components/visualizer/HandVisualizer'
+import { HandVisualizerThree } from './components/visualizer/HandVisualizerThree'
 import { PermissionsGate } from './components/permissions/PermissionsGate'
 import { useAppStore } from './state/useAppStore'
 import { useEngineStore } from './state/useEngineStore'
-import type { Landmark } from './types'
+import type { Landmark, TrackedHand } from './types'
 
 export default function App() {
   const [permissionsGranted, setPermissionsGranted] = useState(false)
   const [landmarks, setLandmarks] = useState<Landmark[] | null>(null)
+  const [trackedHands, setTrackedHands] = useState<TrackedHand[]>([])
   const videoRef = useRef<HTMLVideoElement>(null)
 
   const { setAvailablePorts, theme, viewMode } = useAppStore()
-  const { setStatus, setFeatures, setPerf, markMidiActivity, setMidiStatus } = useEngineStore()
+  const { setStatus, setHands, setPerf, markMidiActivity, setMidiStatus } = useEngineStore()
 
   // Apply persisted theme on mount
   useEffect(() => {
@@ -91,10 +92,10 @@ export default function App() {
         baseOptions: {
           modelAssetPath:
             'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-          delegate: 'GPU',
+          delegate: 'CPU',
         },
         runningMode: 'VIDEO',
-        numHands: 1,
+        numHands: 2,
       })
 
       setStatus('running')
@@ -122,37 +123,69 @@ export default function App() {
 
         if (!result.landmarks || result.landmarks.length === 0) {
           setStatus('no-hand')
-          setFeatures(null)
+          setHands([])
           setLandmarks(null)
+          setTrackedHands([])
           loop()
           return
         }
 
         setStatus('running')
-        const lms = result.landmarks[0] as Landmark[]
-        setLandmarks(lms)
 
-        // Extract hand features
-        const features = extractFeatures(lms)
-        setFeatures(features)
+        // Build TrackedHand array — MediaPipe handedness is camera-mirrored, so flip labels
+        const hands: TrackedHand[] = result.landmarks.map((lms, i) => {
+          const raw = result.handednesses?.[i]?.[0]?.categoryName ?? 'Right'
+          // Mirror flip: camera "Left" = user's right hand (video is mirrored)
+          const handedness = (raw === 'Left' ? 'right' : 'left') as 'left' | 'right'
+          return { landmarks: lms as Landmark[], handedness, features: extractFeatures(lms as Landmark[]) }
+        })
+
+        setHands(hands)
+        setTrackedHands(hands)
+        setLandmarks(hands[0].landmarks)
 
         // Send MIDI for enabled macros
         if (midiOutput) {
           const activeMacros = useAppStore.getState().macros.filter((m) => m.enabled)
           for (const macro of activeMacros) {
-            const raw = features[macro.mapping.feature]
+            const target = macro.mapping.hand ?? 'any'
+            const hand = target === 'any' ? hands[0] : hands.find((h) => h.handedness === target)
+            if (!hand) continue
+
+            // Gesture filter — each active finger constraint contributes to confidence
+            const gf = macro.mapping.gestureFilter
+            let gestureConf = 1
+            if (gf) {
+              const f = hand.features
+              const checks: number[] = []
+              if (gf.thumb  !== 'any') checks.push(gf.thumb  === 'up' ? f.thumbUp  : f.thumbCurl)
+              if (gf.index  !== 'any') checks.push(gf.index  === 'up' ? f.indexUp  : f.indexCurl)
+              if (gf.middle !== 'any') checks.push(gf.middle === 'up' ? f.middleUp : f.middleCurl)
+              if (gf.ring   !== 'any') checks.push(gf.ring   === 'up' ? f.ringUp   : f.ringCurl)
+              if (gf.pinky  !== 'any') checks.push(gf.pinky  === 'up' ? f.pinkyUp  : f.pinkyCurl)
+              if (checks.length) gestureConf = Math.min(...checks)
+            }
+            if (gestureConf < 0.3) continue   // gesture not active
+
+            const raw = hand.features[macro.mapping.feature] * gestureConf
             const k = macro.id
             const prev = smoothed[k] ?? raw
             const alpha = 1 - macro.mapping.smoothing
             smoothed[k] = prev + alpha * (raw - prev)
 
-            const pct = Math.min(
+            let pct = Math.min(
               1,
               Math.max(
                 0,
                 (smoothed[k] - macro.mapping.minVal) / (macro.mapping.maxVal - macro.mapping.minVal)
               )
             )
+            // Apply response curve: negative = logarithmic (slow start), positive = exponential (fast start)
+            const c = macro.mapping.curve ?? 0
+            if (c !== 0) {
+              const exp = c > 0 ? 1 + c * 3 : 1 / (1 - c * 3)
+              pct = Math.pow(pct, exp)
+            }
             const midiVal = Math.round(
               pct * (macro.mapping.midiMax - macro.mapping.midiMin) + macro.mapping.midiMin
             )
@@ -203,7 +236,7 @@ export default function App() {
             <CameraView videoRef={videoRef} landmarks={landmarks} />
           </div>
           {viewMode === 'visualizer' && (
-            <HandVisualizer landmarks={landmarks} />
+            <HandVisualizerThree hands={trackedHands} />
           )}
         </main>
       </div>
@@ -225,43 +258,55 @@ function curl(tip: Landmark, pip: Landmark, mcp: Landmark) {
   return Math.max(0, Math.min(1, 1 - (cosAngle + 1) / 2))
 }
 
-function extractFeatures(lms: Landmark[]) {
-  const wrist = lms[0]
-  const thumbTip = lms[4]
-  const indexTip = lms[8]
-  const indexPip = lms[6]
-  const indexMcp = lms[5]
-  const middleTip = lms[12]
-  const middlePip = lms[10]
-  const middleMcp = lms[9]
-  const ringTip = lms[16]
-  const ringPip = lms[14]
-  const ringMcp = lms[13]
-  const pinkyTip = lms[20]
-  const pinkyPip = lms[18]
-  const pinkyMcp = lms[17]
-  const thumbIp = lms[3]
-  const thumbMcp = lms[2]
+function clamp(v: number) { return Math.max(0, Math.min(1, v)) }
 
-  const pinchDistance = Math.min(1, dist(thumbTip, indexTip) / 0.3)
-  const spreadAmount = Math.min(1, (dist(indexTip, pinkyTip) / 0.5))
-  const indexCurl = curl(indexTip, indexPip, indexMcp)
-  const middleCurl_ = curl(middleTip, middlePip, middleMcp)
-  const ringCurl = curl(ringTip, ringPip, ringMcp)
-  const pinkyCurl = curl(pinkyTip, pinkyPip, pinkyMcp)
-  const thumbCurl = curl(thumbTip, thumbIp, thumbMcp)
-  const fistClosure = (indexCurl + middleCurl_ + ringCurl + pinkyCurl) / 4
+function extractFeatures(lms: Landmark[]) {
+  const wrist    = lms[0]
+  const thumbTip = lms[4], thumbIp = lms[3], thumbMcp = lms[2]
+  const indexTip = lms[8], indexPip = lms[6], indexMcp = lms[5]
+  const midTip   = lms[12], midPip = lms[10], midMcp = lms[9]
+  const ringTip  = lms[16], ringPip = lms[14], ringMcp = lms[13]
+  const pinkyTip = lms[20], pinkyPip = lms[18], pinkyMcp = lms[17]
+
+  // Core
+  const pinchDistance = clamp(dist(thumbTip, indexTip) / 0.3)
+  const spreadAmount  = clamp(dist(indexTip, pinkyTip) / 0.5)
+  const indexCurl  = curl(indexTip, indexPip, indexMcp)
+  const middleCurl = curl(midTip,   midPip,   midMcp)
+  const ringCurl   = curl(ringTip,  ringPip,  ringMcp)
+  const pinkyCurl  = curl(pinkyTip, pinkyPip, pinkyMcp)
+  const thumbCurl  = curl(thumbTip, thumbIp,  thumbMcp)
+  const fistClosure = (indexCurl + middleCurl + ringCurl + pinkyCurl) / 4
+
+  // Extension (inverse of curl, with sharper threshold)
+  const indexUp  = clamp((1 - indexCurl)  * 1.4 - 0.2)
+  const middleUp = clamp((1 - middleCurl) * 1.4 - 0.2)
+  const ringUp   = clamp((1 - ringCurl)   * 1.4 - 0.2)
+  const pinkyUp  = clamp((1 - pinkyCurl)  * 1.4 - 0.2)
+  const thumbUp  = clamp((1 - thumbCurl)  * 1.4 - 0.2)
+
+  const ext = (v: number) => v > 0.55 ? 1 : 0   // binary extended
+  const cur = (v: number) => v < 0.45 ? 0 : 1   // binary curled (inverted)
+  const fingersCount = (ext(indexUp) + ext(middleUp) + ext(ringUp) + ext(pinkyUp) + ext(thumbUp)) / 5
+
+  // Wrist roll — angle of index→pinky MCP vector
+  const dx = pinkyMcp.x - indexMcp.x
+  const dy = pinkyMcp.y - indexMcp.y
+  const wristRoll = clamp((Math.atan2(dy, dx) / Math.PI + 1) / 2)
+
+  // Named gesture confidence
+  const onePointing  = clamp(indexUp * cur(middleUp) * cur(ringUp) * cur(pinkyUp) * 1.5 - 0.2)
+  const peaceSign    = clamp(Math.min(indexUp, middleUp) * cur(ringUp) * cur(pinkyUp) * 1.5 - 0.2)
+  const threeFingers = clamp(Math.min(indexUp, middleUp, ringUp) * cur(pinkyUp) * 1.5 - 0.2)
+  const rockOn       = clamp(Math.min(indexUp, pinkyUp) * cur(middleUp) * cur(ringUp) * 1.5 - 0.2)
+  const openHand     = clamp((indexUp + middleUp + ringUp + pinkyUp + thumbUp) / 5 * 1.4 - 0.2)
+  const thumbsUp     = clamp(thumbUp * cur(indexUp) * cur(middleUp) * cur(ringUp) * cur(pinkyUp) * 1.5 - 0.2)
 
   return {
-    pinchDistance,
-    spreadAmount,
-    wristY: wrist.y,
-    wristX: wrist.x,
-    indexCurl,
-    middleCurl: middleCurl_,
-    ringCurl,
-    pinkyCurl,
-    thumbCurl,
-    fistClosure,
+    wristY: wrist.y, wristX: wrist.x, wristRoll,
+    pinchDistance, spreadAmount,
+    indexCurl, middleCurl, ringCurl, pinkyCurl, thumbCurl, fistClosure,
+    indexUp, middleUp, ringUp, pinkyUp, thumbUp, fingersCount,
+    onePointing, peaceSign, threeFingers, rockOn, openHand, thumbsUp,
   }
 }
