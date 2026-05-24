@@ -94,6 +94,7 @@ export interface Preset {
   name: string
   macros: Macro[]
   createdAt: number
+  category?: string
 }
 
 export interface MidiPort {

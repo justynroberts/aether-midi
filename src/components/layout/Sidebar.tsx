@@ -131,14 +131,27 @@ function decodePreset(str: string): Preset | null {
   }
 }
 
+const CATEGORY_ORDER = [
+  'My Presets',
+  'Filter & Tone',
+  'Volume & Dynamics',
+  'Modulation',
+  'Effects',
+  'Envelope',
+  'Gesture-Gated',
+  'Two-Hand',
+]
+
 function PresetPanel() {
   const { presets, activePresetId, savePreset, loadPreset, deletePreset, setMacros } = useAppStore()
-  const [open, setOpen]         = useState(true)
-  const [name, setName]         = useState('')
+  const [open, setOpen]             = useState(true)
+  const [name, setName]             = useState('')
+  const [search, setSearch]         = useState('')
+  const [collapsedCats, setCollapsedCats] = useState<Set<string>>(new Set())
   const [importing, setImporting]   = useState(false)
   const [importText, setImportText] = useState('')
   const [importName, setImportName] = useState('')
-  const [toast, setToast]       = useState('')
+  const [toast, setToast]           = useState('')
 
   function showToast(msg: string) {
     setToast(msg)
@@ -166,13 +179,20 @@ function PresetPanel() {
       return
     }
     const finalName = importName.trim() || p.name || 'Imported Preset'
-    // setMacros first so savePreset captures the right macros
     setMacros(p.macros)
     savePreset(finalName)
     showToast(`Saved "${finalName}"`)
     setImporting(false)
     setImportText('')
     setImportName('')
+  }
+
+  function toggleCategory(cat: string) {
+    setCollapsedCats(prev => {
+      const next = new Set(prev)
+      next.has(cat) ? next.delete(cat) : next.add(cat)
+      return next
+    })
   }
 
   // Check URL hash for shared preset on mount
@@ -191,6 +211,30 @@ function PresetPanel() {
     }
   }, [])
 
+  // Filter + group presets
+  const q = search.toLowerCase()
+  const filtered = q
+    ? presets.filter(p => p.name.toLowerCase().includes(q) || (p.category ?? '').toLowerCase().includes(q))
+    : presets
+
+  // Build ordered category map
+  const grouped = new Map<string, { preset: Preset; globalIndex: number }[]>()
+  filtered.forEach(p => {
+    const cat = p.category || 'My Presets'
+    if (!grouped.has(cat)) grouped.set(cat, [])
+    grouped.get(cat)!.push({ preset: p, globalIndex: presets.indexOf(p) })
+  })
+
+  // Sort categories by CATEGORY_ORDER, then alphabetically for unknowns
+  const sortedCats = [...grouped.keys()].sort((a, b) => {
+    const ai = CATEGORY_ORDER.indexOf(a)
+    const bi = CATEGORY_ORDER.indexOf(b)
+    if (ai !== -1 && bi !== -1) return ai - bi
+    if (ai !== -1) return -1
+    if (bi !== -1) return 1
+    return a.localeCompare(b)
+  })
+
   return (
     <div className="border-t border-[var(--border)] shrink-0">
       <button
@@ -203,7 +247,7 @@ function PresetPanel() {
             const idx = presets.findIndex(p => p.id === activePresetId)
             const active = presets[idx]
             return active ? (
-              <span className="text-[var(--accent)] normal-case tracking-normal not-uppercase font-normal">
+              <span className="text-[var(--accent)] normal-case tracking-normal font-normal">
                 #{idx + 1} {active.name}
               </span>
             ) : null
@@ -240,44 +284,76 @@ function PresetPanel() {
                 </button>
               </div>
 
-              {/* Preset list */}
+              {/* Search */}
+              {presets.length > 5 && (
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search presets…"
+                  className="w-full text-xs"
+                />
+              )}
+
+              {/* Grouped preset list */}
               {presets.length === 0 && (
                 <p className="text-[10px] text-[var(--muted)] text-center py-1">No presets yet</p>
               )}
-              {presets.map((p, i) => (
-                <div
-                  key={p.id}
-                  className={`flex items-center gap-1 group rounded px-1 -mx-1 ${
-                    p.id === activePresetId ? 'bg-[var(--accent-dim)]' : ''
-                  }`}
-                >
-                  <span className="text-[9px] mono text-[var(--muted)] w-5 shrink-0 text-right">{i + 1}</span>
-                  <span className={`flex-1 text-xs truncate ${p.id === activePresetId ? 'text-[var(--accent)]' : ''}`}>{p.name}</span>
-                  <button
-                    onClick={() => { loadPreset(p.id); showToast('Loaded') }}
-                    className="text-[9px] px-1.5 py-0.5 rounded text-[var(--text-dim)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors"
-                    title="Load preset"
-                  >Load</button>
-                  <button
-                    onClick={() => {
-                      setMacros(p.macros)
-                      savePreset(p.name + ' (copy)')
-                      showToast('Duplicated')
-                    }}
-                    className="text-[9px] px-1.5 py-0.5 rounded text-[var(--text-dim)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors"
-                    title="Duplicate preset"
-                  >Dup</button>
-                  <button
-                    onClick={() => handleShare(p)}
-                    className="text-[9px] px-1.5 py-0.5 rounded text-[var(--text-dim)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors"
-                    title="Copy share code"
-                  >Share</button>
-                  <button
-                    onClick={() => deletePreset(p.id)}
-                    className="text-[9px] px-1 py-0.5 rounded text-[var(--muted)] hover:text-[var(--red)] transition-colors"
-                  >✕</button>
-                </div>
-              ))}
+              {filtered.length === 0 && presets.length > 0 && (
+                <p className="text-[10px] text-[var(--muted)] text-center py-1">No matches</p>
+              )}
+
+              {sortedCats.map(cat => {
+                const items = grouped.get(cat)!
+                const collapsed = collapsedCats.has(cat)
+                return (
+                  <div key={cat}>
+                    <button
+                      onClick={() => toggleCategory(cat)}
+                      className="w-full flex items-center justify-between py-0.5 text-[9px] uppercase tracking-widest text-[var(--muted)] hover:text-[var(--text-dim)] transition-colors"
+                    >
+                      <span>{cat}</span>
+                      <span className="text-[8px]">{collapsed ? '▶' : '▼'} {items.length}</span>
+                    </button>
+                    {!collapsed && (
+                      <div className="flex flex-col gap-0.5 mt-0.5">
+                        {items.map(({ preset: p, globalIndex: i }) => (
+                          <div
+                            key={p.id}
+                            className={`flex items-center gap-1 rounded px-1 -mx-1 ${
+                              p.id === activePresetId ? 'bg-[var(--accent-dim)]' : ''
+                            }`}
+                          >
+                            <span className="text-[9px] mono text-[var(--muted)] w-5 shrink-0 text-right">{i + 1}</span>
+                            <span className={`flex-1 text-xs truncate ${p.id === activePresetId ? 'text-[var(--accent)]' : ''}`}>
+                              {p.name}
+                            </span>
+                            <button
+                              onClick={() => { loadPreset(p.id); showToast('Loaded') }}
+                              className="text-[9px] px-1.5 py-0.5 rounded text-[var(--text-dim)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors"
+                              title="Load preset"
+                            >Load</button>
+                            <button
+                              onClick={() => { setMacros(p.macros); savePreset(p.name + ' (copy)'); showToast('Duplicated') }}
+                              className="text-[9px] px-1.5 py-0.5 rounded text-[var(--text-dim)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors"
+                              title="Duplicate preset"
+                            >Dup</button>
+                            <button
+                              onClick={() => handleShare(p)}
+                              className="text-[9px] px-1.5 py-0.5 rounded text-[var(--text-dim)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors"
+                              title="Copy share code"
+                            >Share</button>
+                            <button
+                              onClick={() => deletePreset(p.id)}
+                              className="text-[9px] px-1 py-0.5 rounded text-[var(--muted)] hover:text-[var(--red)] transition-colors"
+                            >✕</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
 
               {/* Starter library */}
               {presets.length < 30 && (

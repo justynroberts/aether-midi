@@ -11,11 +11,10 @@ Technical reference for contributing to or deploying Aether MIDI.
 | UI framework | React 18 + TypeScript |
 | Build tool | Vite 5 |
 | Styling | Tailwind CSS |
-| State | Zustand (with persist + subscribeWithSelector middleware) |
+| State | Zustand (persist + subscribeWithSelector middleware) |
 | Hand tracking | @mediapipe/tasks-vision — HandLandmarker, CPU delegate |
 | 3D visualizer | @react-three/fiber v8, Three.js |
 | Animation | framer-motion |
-| Local dev HTTPS | @vitejs/plugin-basic-ssl |
 
 ---
 
@@ -48,7 +47,7 @@ npm run preview    # serve the dist/ build locally
 App.tsx                     Main loop: camera init, MediaPipe, feature extraction, MIDI dispatch
 │
 ├── state/
-│   ├── useAppStore.ts      Persisted config — macros, presets, MIDI port, theme
+│   ├── useAppStore.ts      Persisted config — macros, presets, performance banks, MIDI port, theme
 │   └── useEngineStore.ts   Hot-path 60fps state — tracked hands, fps, MIDI activity
 │
 ├── types/index.ts          All shared types: Landmark, HandFeatures, Macro, Preset, etc.
@@ -56,36 +55,51 @@ App.tsx                     Main loop: camera init, MediaPipe, feature extractio
 ├── components/
 │   ├── permissions/        First-run camera + MIDI permission gate
 │   ├── layout/
-│   │   ├── Header.tsx      Port selector, camera/visualizer toggle
-│   │   ├── Sidebar.tsx     Macro cards, preset panel, editor
+│   │   ├── Header.tsx      Port selector, camera/visualizer toggle, theme, help
+│   │   ├── BankBar.tsx     8-slot performance bank strip (below header)
+│   │   ├── Sidebar.tsx     Macro cards, preset panel with categories + search
 │   │   └── Footer.tsx      MIDI status, fps, IAC help modal
 │   ├── camera/             Mirrored video + canvas skeleton overlay
-│   ├── visualizer/         Three.js scene
-│   └── midi/               MidiHelpModal (IAC / loopMIDI setup)
+│   ├── visualizer/         Three.js scene — skeleton, trails, aura, orbit rings, wave pulses
+│   ├── tour/               ProductTour — first-run walkthrough
+│   ├── help/               HelpPanel — slide-in reference
+│   └── brand/              AetherLogo, AetherWordmark
 │
 └── data/
-    └── starterPatches.ts   30 built-in presets
+    └── starterPatches.ts   30 built-in presets with categories
 ```
 
 ### Data flow
 
 ```
 Camera frame
-  → MediaPipe HandLandmarker (CPU, runs off main thread via WASM)
-  → extractFeatures() in App.tsx → HandFeatures object per hand
+  → MediaPipe HandLandmarker (CPU, WASM)
+  → extractFeatures() in App.tsx → HandFeatures per hand
   → useEngineStore.setHands()
+  → Thumbs-up held 500ms → useAppStore.nextBank() (resets smoothing state)
   → Macro loop: for each enabled macro
       ├── check gestureFilter (per-finger up/down requirement)
-      ├── read feature value
+      ├── read feature value from correct hand (by handedness)
+      ├── apply gesture confidence weighting
       ├── apply input range clamp + response curve
-      ├── apply exponential smoothing
-      └── send MIDI CC via Web MIDI API output.send([0xB0 | ch, cc, value])
-  → useEngineStore side-effects: update fps, inferenceMs, lastMidiActivity
+      ├── apply exponential smoothing (IIR, cleared on bank switch)
+      └── send MIDI CC via Web MIDI output.send([0xB0 | ch, cc, value])
 ```
+
+### Performance banks
+
+`useAppStore` holds `performanceBanks: (string | null)[]` (8 slots of preset IDs) and `activeBankSlot: number` (-1 = not in bank mode).
+
+Switching a bank calls `loadPreset()` internally and sets a `resetSmoothed` ref in `App.tsx` that clears the IIR filter state on the next frame — preventing stale values from bleeding into the new patch.
+
+Three switch paths all trigger the same clean transition:
+- **Keyboard 1–8** — `onKey` handler in App.tsx
+- **Thumbs-up gesture** — tracked via `thumbsUpHeldMs` accumulator in the frame loop (fires at 500ms, has −800ms cooldown before next fire)
+- **BankBar click** — Zustand `activeBankSlot` subscription in App.tsx sets `resetSmoothed`
 
 ### Coordinate system
 
-MediaPipe landmark coordinates are normalised 0–1 (origin top-left). The visualizer maps them to world space:
+MediaPipe landmarks are normalised 0–1 (origin top-left). The visualizer maps them to world space:
 
 ```typescript
 const lx = (x: number) => (1 - x) * 4 - 2   // flip X (mirrored video)
@@ -100,12 +114,12 @@ Both `<video>` and `<canvas>` use `scale-x-[-1]` CSS to mirror — landmark coor
 MediaPipe reports handedness from the camera's perspective. Because the video is mirrored, "Left" in MediaPipe = user's right hand. App.tsx flips this on ingest:
 
 ```typescript
-const handedness = r.handedness === 'Left' ? 'right' : 'left'
+const handedness = raw === 'Left' ? 'right' : 'left'
 ```
 
 ### MediaPipe loading
 
-The HandLandmarker loads lazily on first permission grant. WASM is served from jsDelivr CDN; the landmark model from Google Storage. `delegate: 'CPU'` is intentional — the GPU delegate conflicts with the Three.js WebGL context.
+HandLandmarker loads lazily on first permission grant. WASM from jsDelivr CDN; model from Google Storage. `delegate: 'CPU'` is intentional — the GPU delegate conflicts with the Three.js WebGL context.
 
 ---
 
@@ -113,12 +127,11 @@ The HandLandmarker loads lazily on first permission grant. WASM is served from j
 
 1. Add the key to `HandFeatures` in `src/types/index.ts`
 2. Compute it in `extractFeatures()` in `App.tsx`
-3. Add it to the correct `FEATURE_GROUPS` entry in `Sidebar.tsx` so it appears in the UI
+3. Add it to the correct `FEATURE_GROUPS` entry in `Sidebar.tsx`
 
 ```typescript
 // types/index.ts
 export interface HandFeatures {
-  // ...existing...
   myNewFeature: number  // 0–1 normalised
 }
 
@@ -133,7 +146,7 @@ myNewFeature: computeMyFeature(landmarks),
 
 ## Adding a starter preset
 
-Open `src/data/starterPatches.ts` and call the `mac()` helper:
+Open `src/data/starterPatches.ts` and use the `mac()` + `preset()` helpers:
 
 ```typescript
 preset('My Preset Name', [
@@ -151,95 +164,74 @@ preset('My Preset Name', [
     'any',            // hand: 'any' | 'left' | 'right'
     nf,               // gesture filter (nf = no filter)
   ),
-])
+], 'Category Name')   // category string — groups preset in sidebar
 ```
+
+Available categories: `'Filter & Tone'`, `'Volume & Dynamics'`, `'Modulation'`, `'Effects'`, `'Envelope'`, `'Gesture-Gated'`, `'Two-Hand'`. Presets without a category appear under `'My Presets'`.
 
 ---
 
 ## Deploying
 
-The build output is a completely static site — no server required. Any host that serves over HTTPS works.
+The build is a completely static site. Any HTTPS host works.
 
-### Netlify (recommended — easiest)
+### Docker (self-hosted)
 
-1. `npm run build` → produces `dist/`
+```bash
+# Build image and start with auto-generated self-signed cert
+docker compose up -d --build
+
+# To use your own domain name in the cert CN:
+SSL_COMMON_NAME=yourdomain.com docker compose up -d --build
+```
+
+Serves HTTP on port 80 (redirects to HTTPS) and HTTPS on port 443. The SSL cert is generated on first start and persisted in a Docker volume so it survives restarts.
+
+**Note:** Self-signed certs trigger a one-time browser warning. Users click Advanced → Proceed. For a public audience, replace with a Let's Encrypt cert via Certbot or a Caddy reverse proxy.
+
+### Netlify (easiest)
+
+1. `npm run build`
 2. Drag the `dist/` folder to [app.netlify.com/drop](https://app.netlify.com/drop)
-3. Done. Netlify gives you an HTTPS URL instantly.
 
-Or connect your GitHub repo and Netlify will auto-deploy on every push (set build command to `npm run build`, publish directory to `dist`).
+Or connect your GitHub repo — set build command `npm run build`, publish directory `dist`.
 
 ### Vercel
 
 ```bash
-npm install -g vercel
-vercel --prod
+npx vercel --prod
 ```
 
 ### GitHub Pages
 
-GitHub Pages serves from a subdirectory (`/repo-name/`), so set the `base` in `vite.config.ts` before building:
+Set `base` in `vite.config.ts` before building:
 
 ```typescript
 export default defineConfig({
-  base: '/aether-midi/',   // add this line
-  plugins: [react(), basicSsl()],
+  base: '/aether-midi/',
   // ...
 })
 ```
 
-Then build and push the `dist/` folder to the `gh-pages` branch, or use the [gh-pages](https://www.npmjs.com/package/gh-pages) package:
+Then push `dist/` to `gh-pages` branch:
 
 ```bash
 npm install -D gh-pages
 npx gh-pages -d dist
 ```
 
-### Self-hosted
-
-Serve the `dist/` folder from any web server. **HTTPS is mandatory** — Web MIDI and camera access are blocked on plain HTTP. Use Let's Encrypt for a free certificate.
-
 ---
 
 ## Key design decisions
 
-**CPU delegate for MediaPipe** — The GPU delegate (WebGL) conflicts with the Three.js renderer, causing WebGL context loss. CPU is slightly slower but stable and still runs at 60fps for hand tracking.
+**CPU delegate for MediaPipe** — The GPU delegate conflicts with the Three.js WebGL context. CPU is stable and runs at 60fps for hand tracking.
 
-**No postprocessing (bloom)** — `@react-three/postprocessing` v3 requires R3F v9. R3F v9 has Expo peer dependency conflicts at time of writing. Bloom is replicated via `THREE.AdditiveBlending` + `CanvasTexture` radial gradients.
+**No postprocessing (bloom)** — `@react-three/postprocessing` v3 requires R3F v9, which has Expo peer dependency conflicts. Bloom is replicated with `THREE.AdditiveBlending` + `CanvasTexture` radial gradients — same visual result, no extra dependency.
 
-**Zustand subscribeWithSelector** — MIDI port updates need to subscribe to a specific slice of state. The `subscribeWithSelector` middleware enables `useAppStore.subscribe(selector, callback)`.
+**Zustand subscribeWithSelector** — MIDI port and bank-switch events subscribe to specific state slices. The middleware enables `useAppStore.subscribe(selector, callback)` outside React.
 
-**Pre-allocated BufferGeometry** — All Three.js geometries in the visualizer are created once and updated via `needsUpdate = true` each frame. This avoids per-frame garbage collection pressure at 60fps.
+**Pre-allocated BufferGeometry** — All Three.js geometries are created once and updated via `needsUpdate = true` per frame. Zero per-frame allocations at 60fps.
 
-**Preset sharing via base64** — Presets are JSON-encoded then base64'd using the `btoa(unescape(encodeURIComponent(...)))` pattern to safely handle Unicode characters (emoji in gesture labels etc.).
+**Preset sharing via base64** — Presets are `JSON.stringify`'d then encoded via `btoa(unescape(encodeURIComponent(...)))` to safely handle Unicode in gesture labels.
 
----
-
-## Project structure
-
-```
-src/
-  App.tsx                    Main component, camera loop, MIDI loop
-  main.tsx                   React root, theme init
-  types/
-    index.ts                 All TypeScript interfaces
-  state/
-    useAppStore.ts           Persisted Zustand store
-    useEngineStore.ts        Non-persisted hot-path store
-  components/
-    permissions/
-      PermissionsGate.tsx    Camera + MIDI request UI
-    layout/
-      Header.tsx
-      Sidebar.tsx            Macro cards + preset panel
-      Footer.tsx             Status bar
-    camera/
-      CameraView.tsx         <video> + skeleton <canvas>
-    visualizer/
-      HandVisualizerThree.tsx Three.js scene
-    midi/
-      MidiHelpModal.tsx      IAC / loopMIDI setup guide
-  data/
-    starterPatches.ts        30 built-in presets
-  styles/
-    globals.css              CSS custom properties + Tailwind base
-```
+**IIR smoothing reset on bank switch** — The per-macro exponential smoother accumulates state. Clearing it on bank switch prevents the old preset's CC values from slowly decaying into the new patch.

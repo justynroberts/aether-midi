@@ -1,0 +1,22 @@
+services:
+  aether-midi:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Shown in the self-signed cert's CN field — set to your domain or server IP
+      SSL_COMMON_NAME: ${SSL_COMMON_NAME:-aether-midi}
+    volumes:
+      # Persist the generated cert so it survives container restarts
+      - ssl_certs:/etc/nginx/ssl
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--no-check-certificate", "https://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  ssl_certs:

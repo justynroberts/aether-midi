@@ -21,6 +21,10 @@ interface AppState {
   // Active macros
   macros: Macro[]
 
+  // Performance banks (8 slots, each holds a preset ID or null)
+  performanceBanks: (string | null)[]
+  activeBankSlot: number  // -1 = not in bank mode
+
   // UI
   showDebug: boolean
   theme: Theme
@@ -41,6 +45,10 @@ interface AppState {
   savePreset: (name: string) => void
   loadPreset: (id: string) => void
   deletePreset: (id: string) => void
+  setBankPreset: (slot: number, presetId: string | null) => void
+  activateBank: (slot: number) => void
+  nextBank: () => void
+  clearBanks: () => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -53,6 +61,8 @@ export const useAppStore = create<AppState>()(
       presets: [],
       activePresetId: null,
       macros: getDefaultMacros(),
+      performanceBanks: [null, null, null, null, null, null, null, null],
+      activeBankSlot: -1,
       showDebug: false,
       theme: 'dark',
       viewMode: 'visualizer',
@@ -100,7 +110,39 @@ export const useAppStore = create<AppState>()(
         set((s) => ({
           presets: s.presets.filter((p) => p.id !== id),
           activePresetId: s.activePresetId === id ? null : s.activePresetId,
+          // Clear any bank slots pointing to this preset
+          performanceBanks: s.performanceBanks.map(b => b === id ? null : b),
         })),
+
+      setBankPreset: (slot, presetId) =>
+        set((s) => {
+          const banks = [...s.performanceBanks]
+          banks[slot] = presetId
+          return { performanceBanks: banks }
+        }),
+
+      activateBank: (slot) => {
+        const { performanceBanks, presets } = get()
+        const presetId = performanceBanks[slot]
+        if (!presetId) return
+        const preset = presets.find(p => p.id === presetId)
+        if (preset) set({ macros: preset.macros, activePresetId: presetId, activeBankSlot: slot })
+      },
+
+      nextBank: () => {
+        const { performanceBanks, activeBankSlot, presets } = get()
+        const occupied = performanceBanks
+          .map((id, i) => ({ id, i }))
+          .filter(s => s.id !== null && presets.some(p => p.id === s.id))
+        if (occupied.length === 0) return
+        const cur = occupied.findIndex(s => s.i === activeBankSlot)
+        const next = occupied[(cur + 1) % occupied.length]
+        const preset = presets.find(p => p.id === next.id)
+        if (preset) set({ macros: preset.macros, activePresetId: next.id!, activeBankSlot: next.i })
+      },
+
+      clearBanks: () =>
+        set({ performanceBanks: [null, null, null, null, null, null, null, null], activeBankSlot: -1 }),
     }),
     { name: 'aether-midi-config' }
   )

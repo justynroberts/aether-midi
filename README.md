@@ -73,7 +73,7 @@ Your hand  →  Webcam  →  Aether MIDI  →  Virtual MIDI cable  →  Your DAW
 
 ## The 30 starter presets
 
-The built-in library covers the most common expressive controls:
+The built-in library covers the most common expressive controls, organised into categories:
 
 | Category | Examples |
 |---|---|
@@ -81,6 +81,7 @@ The built-in library covers the most common expressive controls:
 | Volume & Dynamics | Wrist Volume Fader, Open Hand Expression, Pan with Roll |
 | Modulation | Pinch Vibrato, Wrist Vibrato, Spread LFO Depth |
 | Effects | Reverb Throw, Chorus Wave, Delay Feedback, Tremolo Fist |
+| Envelope | Pinch Attack, Wrist Release |
 | Gesture-Gated | One Finger controls Cutoff, Peace Sign controls Filter + Res |
 | Two-Hand | Right hand controls filter, Left hand controls reverb |
 
@@ -107,6 +108,21 @@ The key settings:
 
 ---
 
+## Performance banks — for live sets
+
+The **bank bar** sits just below the header and gives you 8 numbered slots you can load with different presets. Hover any slot to assign a preset from your library.
+
+During a performance, switch banks instantly:
+
+| Action | What happens |
+|---|---|
+| Press **1 – 8** on your keyboard | Jump directly to that bank |
+| Hold **thumbs up** for 0.5 s | Advance to the next occupied bank in sequence |
+
+MIDI smoothing resets on every switch so you get a clean, click-free transition. Empty slots are skipped by the thumbs-up cycle, so a three-song set with three banks loops cleanly.
+
+---
+
 ## Saving and sharing presets
 
 **To save your current setup:** Open the Presets panel, type a name, and click Save.
@@ -114,6 +130,8 @@ The key settings:
 **To share a preset:** Click the **Share** button next to any saved preset. A code is copied to your clipboard. Send it to someone — they paste it into the **Import from code** section and click Save.
 
 **To duplicate a preset:** Click **Dup** next to any preset to create an editable copy.
+
+Presets in the panel are grouped by category and searchable — once you have more than five presets installed the search box appears automatically.
 
 ---
 
@@ -124,6 +142,16 @@ The key settings:
 - If tracking feels jumpy, increase **Smoothing** to 70–80%.
 - Use the **Calibrate** button to set the input range precisely for your movement style.
 - Two-hand presets give you independent control — try filter on the right hand and reverb on the left.
+- For live performance, set up your banks before you go on stage. Test the thumbs-up gesture with your DAW running.
+
+---
+
+## Keyboard shortcuts
+
+| Key | Action |
+|---|---|
+| `1` – `8` | Activate performance bank slot |
+| `d` | Toggle debug overlay (fps, inference ms) |
 
 ---
 
@@ -140,4 +168,4 @@ The key settings:
 
 ## License
 
-MIT License — free to use, modify, and share. See [LICENSE](LICENSE) for details.
+MIT — free to use, modify, and share. See [LICENSE](LICENSE).

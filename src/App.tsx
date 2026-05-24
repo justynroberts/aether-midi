@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Header } from './components/layout/Header'
 import { Footer } from './components/layout/Footer'
 import { Sidebar } from './components/layout/Sidebar'
+import { BankBar } from './components/layout/BankBar'
 import { CameraView } from './components/camera/CameraView'
 import { HandVisualizerThree } from './components/visualizer/HandVisualizerThree'
 import { PermissionsGate } from './components/permissions/PermissionsGate'
@@ -22,6 +23,7 @@ export default function App() {
 
   const { setAvailablePorts, theme, viewMode } = useAppStore()
   const { setStatus, setHands, setPerf, markMidiActivity, setMidiStatus } = useEngineStore()
+  const resetSmoothed = useRef(false)  // set to true on bank switch to flush IIR state
 
   // Apply persisted theme on mount
   useEffect(() => {
@@ -38,6 +40,8 @@ export default function App() {
     let frameCount = 0
     let fpsTimer = 0
     const smoothed: Record<string, number> = {}
+    let thumbsUpHeldMs = 0
+    let lastFrameTime = 0
 
     async function init() {
       // Start camera
@@ -79,6 +83,12 @@ export default function App() {
             (id) => { midiOutput = id ? (midi.outputs.get(id) ?? null) : null }
           )
 
+          // Reset smoothing on bank switch (UI clicks, not just keyboard)
+          useAppStore.subscribe(
+            (s) => s.activeBankSlot,
+            () => { resetSmoothed.current = true }
+          )
+
           // Resolve immediately for current selection
           const initialId = useAppStore.getState().selectedPortId
           midiOutput = initialId ? (midi.outputs.get(initialId) ?? null) : null
@@ -111,6 +121,15 @@ export default function App() {
         if (!detector || !videoRef.current || videoRef.current.readyState < 2) {
           loop()
           return
+        }
+
+        const dt = lastFrameTime ? now - lastFrameTime : 16
+        lastFrameTime = now
+
+        // Flush smoothing state on bank switch (clean transitions)
+        if (resetSmoothed.current) {
+          Object.keys(smoothed).forEach(k => delete smoothed[k])
+          resetSmoothed.current = false
         }
 
         const t0 = performance.now()
@@ -147,6 +166,20 @@ export default function App() {
         setHands(hands)
         setTrackedHands(hands)
         setLandmarks(hands[0].landmarks)
+
+        // Thumbs-up gesture held 500ms → next bank
+        const thumbsUpConf = Math.max(...hands.map(h => h.features.thumbsUp))
+        if (thumbsUpConf > 0.75) {
+          thumbsUpHeldMs += dt
+          if (thumbsUpHeldMs >= 500) {
+            useAppStore.getState().nextBank()
+            resetSmoothed.current = true
+            thumbsUpHeldMs = -800  // cooldown: must release before firing again
+          }
+        } else {
+          if (thumbsUpHeldMs < 0) thumbsUpHeldMs = Math.min(0, thumbsUpHeldMs + dt)
+          else thumbsUpHeldMs = 0
+        }
 
         // Send MIDI for enabled macros
         if (midiOutput) {
@@ -208,10 +241,17 @@ export default function App() {
       setStatus('error')
     })
 
-    // Keyboard shortcut: D = toggle debug
+    // Keyboard shortcuts
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'd' && !e.metaKey && !e.ctrlKey) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      if (e.key === 'd') {
         useAppStore.getState().toggleDebug()
+        return
+      }
+      const slot = parseInt(e.key) - 1
+      if (slot >= 0 && slot <= 7) {
+        useAppStore.getState().activateBank(slot)
+        resetSmoothed.current = true
       }
     }
     window.addEventListener('keydown', onKey)
@@ -232,6 +272,7 @@ export default function App() {
   return (
     <div className="flex flex-col h-full">
       <Header onHelpOpen={() => setShowHelp(true)} />
+      <BankBar />
       <div className="flex flex-1 min-h-0">
         <Sidebar />
         <main className="flex-1 p-4 overflow-hidden h-full flex flex-col">
