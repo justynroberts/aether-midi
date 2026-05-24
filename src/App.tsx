@@ -16,7 +16,7 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null)
 
   const { setAvailablePorts, theme, viewMode } = useAppStore()
-  const { setStatus, setFeatures, setPerf, markMidiActivity } = useEngineStore()
+  const { setStatus, setFeatures, setPerf, markMidiActivity, setMidiStatus } = useEngineStore()
 
   // Apply persisted theme on mount
   useEffect(() => {
@@ -45,35 +45,40 @@ export default function App() {
       }
 
       // Init MIDI
-      if (navigator.requestMIDIAccess) {
+      if (!navigator.requestMIDIAccess) {
+        setMidiStatus('unavailable')
+      } else {
         try {
           const midi = await navigator.requestMIDIAccess({ sysex: false })
-          const ports = [...midi.outputs.values()].map((o) => ({
-            id: o.id,
-            name: o.name ?? o.id,
-            manufacturer: o.manufacturer ?? undefined,
-          }))
-          setAvailablePorts(ports)
 
-          midi.onstatechange = () => {
-            const updated = [...midi.outputs.values()].map((o) => ({
+          function refreshPorts() {
+            const ports = [...midi.outputs.values()].map((o) => ({
               id: o.id,
               name: o.name ?? o.id,
               manufacturer: o.manufacturer ?? undefined,
             }))
-            setAvailablePorts(updated)
+            setAvailablePorts(ports)
+            setMidiStatus(ports.length === 0 ? 'no-ports' : 'ready')
+
+            // Re-resolve current output after port list changes
+            const currentId = useAppStore.getState().selectedPortId
+            midiOutput = currentId ? (midi.outputs.get(currentId) ?? null) : null
           }
 
-          // Track selected output
+          refreshPorts()
+          midi.onstatechange = refreshPorts
+
+          // Keep midiOutput in sync when user picks a port
           useAppStore.subscribe(
             (s) => s.selectedPortId,
-            (id) => {
-              midiOutput = id ? (midi.outputs.get(id) ?? null) : null
-            },
-            { fireImmediately: true }
+            (id) => { midiOutput = id ? (midi.outputs.get(id) ?? null) : null }
           )
+
+          // Resolve immediately for current selection
+          const initialId = useAppStore.getState().selectedPortId
+          midiOutput = initialId ? (midi.outputs.get(initialId) ?? null) : null
         } catch {
-          // No MIDI access
+          setMidiStatus('denied')
         }
       }
 
