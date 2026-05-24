@@ -355,10 +355,12 @@ interface MacroRowProps {
 }
 
 function MacroRow({ macro, isEditing, onToggle, onEditToggle, onDelete }: MacroRowProps) {
-  const features = useEngineStore(s => s.features)
+  const hands = useEngineStore(s => s.hands)
   const { updateMacro } = useAppStore()
 
-  const raw = features ? features[macro.mapping.feature] : 0
+  const target = macro.mapping.hand ?? 'any'
+  const hand = target === 'any' ? hands[0] : hands.find(h => h.handedness === target)
+  const raw = hand?.features?.[macro.mapping.feature] ?? 0
   const pct = Math.min(1, Math.max(0,
     (raw - macro.mapping.minVal) / (macro.mapping.maxVal - macro.mapping.minVal)
   ))

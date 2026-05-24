@@ -186,9 +186,9 @@ export default function App() {
               const exp = c > 0 ? 1 + c * 3 : 1 / (1 - c * 3)
               pct = Math.pow(pct, exp)
             }
-            const midiVal = Math.round(
+            const midiVal = Math.min(127, Math.max(0, Math.round(
               pct * (macro.mapping.midiMax - macro.mapping.midiMin) + macro.mapping.midiMin
-            )
+            )))
             const ch = (macro.mapping.channel - 1) & 0x0f
             midiOutput.send([0xb0 | ch, macro.mapping.ccNumber, midiVal])
             markMidiActivity()
