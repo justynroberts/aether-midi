@@ -197,7 +197,7 @@ export default function App() {
       <Header />
       <div className="flex flex-1 min-h-0">
         <Sidebar />
-        <main className="flex-1 p-4 overflow-hidden">
+        <main className="flex-1 p-4 overflow-hidden h-full flex flex-col">
           {/* Video always in DOM — MediaPipe needs it; hidden in visualizer mode */}
           <div className={viewMode === 'camera' ? 'w-full h-full' : 'absolute opacity-0 pointer-events-none w-px h-px overflow-hidden'}>
             <CameraView videoRef={videoRef} landmarks={landmarks} />

@@ -36,7 +36,17 @@ export function Footer() {
 
       <div className="flex items-center gap-2 ml-auto">
         {helpText && (
-          <span className="text-[var(--red)] text-[10px] not-mono font-sans">{helpText}</span>
+          <span className="text-[var(--red)] text-[10px] not-mono font-sans flex items-center gap-1.5">
+            {helpText}
+            {midiStatus === 'no-ports' && (
+              <button
+                onClick={() => alert('IAC Driver is built into macOS — no download needed.\n\n1. Open Spotlight → search "Audio MIDI Setup"\n2. Window → Show MIDI Studio\n3. Double-click "IAC Driver"\n4. Tick "Device is online"\n5. Reload this page\n\nThen pick "IAC Bus 1" in the port selector above.')}
+                className="underline cursor-pointer hover:text-white transition-colors not-mono font-sans"
+              >
+                How?
+              </button>
+            )}
+          </span>
         )}
         <span className={`w-1.5 h-1.5 rounded-full transition-colors ${dotColor}`} />
         <span>MIDI {midiActive ? 'TX' : midiStatus === 'sending' ? 'ready' : midiStatus}</span>
