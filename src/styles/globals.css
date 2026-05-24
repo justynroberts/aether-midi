@@ -3,7 +3,8 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
+  :root,
+  [data-theme="dark"] {
     --bg: #0a0a0a;
     --surface: #111111;
     --surface-2: #181818;
@@ -12,10 +13,29 @@
     --text: #e8e8e8;
     --text-dim: #888888;
     --accent: #00ff88;
-    --accent-dim: #00994d;
+    --accent-dim: rgba(0, 255, 136, 0.12);
     --blue: #00aaff;
     --red: #ff4444;
     --yellow: #ffcc00;
+    --viz-bg: #06080f;
+    --viz-grid: rgba(255,255,255,0.025);
+  }
+
+  [data-theme="light"] {
+    --bg: #f0f0f3;
+    --surface: #ffffff;
+    --surface-2: #f5f5f7;
+    --border: #e2e2e6;
+    --muted: #b0b0b8;
+    --text: #111116;
+    --text-dim: #6b6b78;
+    --accent: #00b459;
+    --accent-dim: rgba(0, 180, 89, 0.12);
+    --blue: #0080cc;
+    --red: #e03030;
+    --yellow: #cc9900;
+    --viz-bg: #0d0f1a;
+    --viz-grid: rgba(255,255,255,0.03);
   }
 
   * {
@@ -30,34 +50,72 @@
     color: var(--text);
     font-family: 'Outfit', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
+    transition: background 0.2s, color 0.2s;
   }
 
-  ::-webkit-scrollbar {
-    width: 4px;
-  }
-  ::-webkit-scrollbar-track {
-    background: var(--bg);
-  }
-  ::-webkit-scrollbar-thumb {
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 3px;
     background: var(--border);
     border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+    width: 100%;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
+
+  select, input[type=number], input[type=text] {
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-family: inherit;
+    font-size: 12px;
+    outline: none;
+  }
+  select:focus, input:focus {
+    border-color: var(--accent);
+  }
+  input[type=number] {
+    font-family: 'JetBrains Mono', monospace;
+    width: 60px;
+    text-align: center;
   }
 }
 
 @layer components {
   .btn {
-    @apply px-3 py-1.5 text-sm font-medium rounded-md transition-colors;
+    @apply px-3 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer;
   }
   .btn-primary {
-    @apply btn bg-accent text-black hover:bg-green-400;
+    @apply btn bg-[var(--accent)] text-black hover:brightness-110;
   }
   .btn-ghost {
     @apply btn text-[var(--text-dim)] hover:text-[var(--text)] hover:bg-[var(--surface-2)];
+  }
+  .btn-danger {
+    @apply btn text-[var(--red)] hover:bg-red-950/30;
   }
   .card {
     @apply bg-[var(--surface)] border border-[var(--border)] rounded-xl;
   }
   .mono {
     font-family: 'JetBrains Mono', monospace;
+  }
+  .field-label {
+    @apply text-[10px] uppercase tracking-widest text-[var(--text-dim)] mb-1;
   }
 }

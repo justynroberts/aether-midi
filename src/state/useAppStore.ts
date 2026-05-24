@@ -3,6 +3,9 @@ import { create } from 'zustand'
 import { persist, subscribeWithSelector } from 'zustand/middleware'
 import type { Macro, Preset, MidiPort } from '../types'
 
+export type Theme = 'dark' | 'light'
+export type ViewMode = 'visualizer' | 'camera'
+
 interface AppState {
   // MIDI config
   selectedPortId: string | null
@@ -13,19 +16,26 @@ interface AppState {
   presets: Preset[]
   activePresetId: string | null
 
-  // Active macros (from active preset)
+  // Active macros
   macros: Macro[]
 
-  // Debug
+  // UI
   showDebug: boolean
+  theme: Theme
+  viewMode: ViewMode
 
   // Actions
   setSelectedPort: (id: string | null) => void
   setAvailablePorts: (ports: MidiPort[]) => void
   setMidiChannel: (ch: number) => void
   toggleDebug: () => void
+  setTheme: (t: Theme) => void
+  setViewMode: (m: ViewMode) => void
   setMacros: (macros: Macro[]) => void
   toggleMacro: (id: string) => void
+  addMacro: () => void
+  updateMacro: (id: string, patch: Partial<Macro>) => void
+  deleteMacro: (id: string) => void
   savePreset: (name: string) => void
   loadPreset: (id: string) => void
   deletePreset: (id: string) => void
@@ -42,16 +52,31 @@ export const useAppStore = create<AppState>()(
       activePresetId: null,
       macros: getDefaultMacros(),
       showDebug: false,
+      theme: 'dark',
+      viewMode: 'visualizer',
 
       setSelectedPort: (id) => set({ selectedPortId: id }),
       setAvailablePorts: (ports) => set({ availablePorts: ports }),
       setMidiChannel: (ch) => set({ midiChannel: ch }),
       toggleDebug: () => set((s) => ({ showDebug: !s.showDebug })),
+      setTheme: (theme) => {
+        set({ theme })
+        document.documentElement.setAttribute('data-theme', theme)
+      },
+      setViewMode: (viewMode) => set({ viewMode }),
       setMacros: (macros) => set({ macros }),
       toggleMacro: (id) =>
         set((s) => ({
           macros: s.macros.map((m) => (m.id === id ? { ...m, enabled: !m.enabled } : m)),
         })),
+      addMacro: () =>
+        set((s) => ({ macros: [...s.macros, makeNewMacro(s.macros.length)] })),
+      updateMacro: (id, patch) =>
+        set((s) => ({
+          macros: s.macros.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+        })),
+      deleteMacro: (id) =>
+        set((s) => ({ macros: s.macros.filter((m) => m.id !== id) })),
 
       savePreset: (name) => {
         const { macros, presets } = get()
@@ -79,6 +104,28 @@ export const useAppStore = create<AppState>()(
   )
   )
 )
+
+const MACRO_COLORS = ['#00ff88', '#00aaff', '#ff6644', '#ffcc00', '#cc44ff', '#ff44aa', '#44ffcc']
+
+function makeNewMacro(index: number): Macro {
+  return {
+    id: crypto.randomUUID(),
+    label: 'New Macro',
+    trigger: 'point',
+    mapping: {
+      feature: 'wristY',
+      ccNumber: 2,
+      channel: 1,
+      minVal: 0,
+      maxVal: 1,
+      midiMin: 0,
+      midiMax: 127,
+      smoothing: 0.6,
+    },
+    enabled: true,
+    color: MACRO_COLORS[index % MACRO_COLORS.length],
+  }
+}
 
 function getDefaultMacros(): Macro[] {
   return [

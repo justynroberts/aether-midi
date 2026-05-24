@@ -4,6 +4,7 @@ import { Header } from './components/layout/Header'
 import { Footer } from './components/layout/Footer'
 import { Sidebar } from './components/layout/Sidebar'
 import { CameraView } from './components/camera/CameraView'
+import { HandVisualizer } from './components/visualizer/HandVisualizer'
 import { PermissionsGate } from './components/permissions/PermissionsGate'
 import { useAppStore } from './state/useAppStore'
 import { useEngineStore } from './state/useEngineStore'
@@ -14,8 +15,13 @@ export default function App() {
   const [landmarks, setLandmarks] = useState<Landmark[] | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
 
-  const { setAvailablePorts } = useAppStore()
+  const { setAvailablePorts, theme, viewMode } = useAppStore()
   const { setStatus, setFeatures, setPerf, markMidiActivity } = useEngineStore()
+
+  // Apply persisted theme on mount
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+  }, [theme])
 
   // Start camera and tracking once permissions are granted
   useEffect(() => {
@@ -187,7 +193,13 @@ export default function App() {
       <div className="flex flex-1 min-h-0">
         <Sidebar />
         <main className="flex-1 p-4 overflow-hidden">
-          <CameraView videoRef={videoRef} landmarks={landmarks} />
+          {/* Video always in DOM — MediaPipe needs it; hidden in visualizer mode */}
+          <div className={viewMode === 'camera' ? 'w-full h-full' : 'absolute opacity-0 pointer-events-none w-px h-px overflow-hidden'}>
+            <CameraView videoRef={videoRef} landmarks={landmarks} />
+          </div>
+          {viewMode === 'visualizer' && (
+            <HandVisualizer landmarks={landmarks} />
+          )}
         </main>
       </div>
       <Footer />
