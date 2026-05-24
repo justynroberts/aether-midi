@@ -43,6 +43,46 @@ export default function App() {
     let thumbsUpHeldMs = 0
     let lastFrameTime = 0
 
+    // --- Hand stabilization ---
+    const LABEL_BUF_SIZE = 8    // majority-vote window in frames (~133ms @ 60fps)
+    const GHOST_FRAMES   = 2    // hold last hand N frames on brief drop-out
+    const LM_ALPHA       = 0.5  // landmark IIR blend per frame (0=frozen, 1=raw)
+
+    interface SlotState {
+      labels: Array<'left' | 'right'>
+      smoothedLms: Landmark[] | null
+      ghost: number
+      lastHand: TrackedHand | null
+    }
+    const slots: SlotState[] = [
+      { labels: [], smoothedLms: null, ghost: 0, lastHand: null },
+      { labels: [], smoothedLms: null, ghost: 0, lastHand: null },
+    ]
+
+    function voteLabel(slot: SlotState, raw: 'left' | 'right'): 'left' | 'right' {
+      slot.labels.push(raw)
+      if (slot.labels.length > LABEL_BUF_SIZE) slot.labels.shift()
+      const leftVotes = slot.labels.filter(l => l === 'left').length
+      return leftVotes * 2 >= slot.labels.length ? 'left' : 'right'
+    }
+
+    function applyLmSmooth(slot: SlotState, lms: Landmark[]): Landmark[] {
+      if (!slot.smoothedLms) { slot.smoothedLms = lms.map(l => ({ ...l })); return slot.smoothedLms }
+      const s = slot.smoothedLms
+      for (let i = 0; i < lms.length; i++) {
+        s[i] = {
+          x: s[i].x + LM_ALPHA * (lms[i].x - s[i].x),
+          y: s[i].y + LM_ALPHA * (lms[i].y - s[i].y),
+          z: s[i].z + LM_ALPHA * (lms[i].z - s[i].z),
+        }
+      }
+      return s
+    }
+
+    function clearSlot(slot: SlotState) {
+      slot.labels = []; slot.smoothedLms = null; slot.ghost = 0; slot.lastHand = null
+    }
+
     async function init() {
       // Start camera
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -86,7 +126,7 @@ export default function App() {
           // Reset smoothing on bank switch (UI clicks, not just keyboard)
           useAppStore.subscribe(
             (s) => s.activeBankSlot,
-            () => { resetSmoothed.current = true }
+            () => { resetSmoothed.current = true; slots.forEach(clearSlot) }
           )
 
           // Resolve immediately for current selection
@@ -110,6 +150,9 @@ export default function App() {
         },
         runningMode: 'VIDEO',
         numHands: 2,
+        minHandDetectionConfidence: 0.7,
+        minHandPresenceConfidence: 0.7,
+        minTrackingConfidence: 0.5,
       })
 
       setStatus('running')
@@ -144,7 +187,32 @@ export default function App() {
           fpsTimer = now
         }
 
-        if (!result.landmarks || result.landmarks.length === 0) {
+        const detectedCount = result.landmarks?.length ?? 0
+
+        // Build stabilized hands: majority-vote label + landmark IIR + ghost hold on drop-out
+        const hands: TrackedHand[] = []
+        for (let i = 0; i < 2; i++) {
+          const slot = slots[i]
+          if (i < detectedCount) {
+            const lms      = result.landmarks[i] as Landmark[]
+            const rawLabel = result.handednesses?.[i]?.[0]?.categoryName ?? 'Right'
+            // Mirror flip: camera "Left" = user's right hand (video is mirrored)
+            const rawHand    = (rawLabel === 'Left' ? 'right' : 'left') as 'left' | 'right'
+            const handedness = voteLabel(slot, rawHand)
+            const smoothed   = applyLmSmooth(slot, lms)
+            const h: TrackedHand = { landmarks: smoothed, handedness, features: extractFeatures(smoothed) }
+            slot.lastHand = h
+            slot.ghost    = GHOST_FRAMES
+            hands.push(h)
+          } else if (slot.ghost > 0 && slot.lastHand) {
+            slot.ghost--
+            hands.push(slot.lastHand)
+          } else {
+            clearSlot(slot)
+          }
+        }
+
+        if (detectedCount === 0 && hands.length === 0) {
           setStatus('no-hand')
           setHands([])
           setLandmarks(null)
@@ -154,14 +222,6 @@ export default function App() {
         }
 
         setStatus('running')
-
-        // Build TrackedHand array — MediaPipe handedness is camera-mirrored, so flip labels
-        const hands: TrackedHand[] = result.landmarks.map((lms, i) => {
-          const raw = result.handednesses?.[i]?.[0]?.categoryName ?? 'Right'
-          // Mirror flip: camera "Left" = user's right hand (video is mirrored)
-          const handedness = (raw === 'Left' ? 'right' : 'left') as 'left' | 'right'
-          return { landmarks: lms as Landmark[], handedness, features: extractFeatures(lms as Landmark[]) }
-        })
 
         setHands(hands)
         setTrackedHands(hands)
