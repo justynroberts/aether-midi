@@ -265,14 +265,33 @@ function PresetPanel() {
             className="overflow-hidden"
           >
             <div className="px-3 pb-3 flex flex-col gap-2">
-              {/* Save current */}
+              {/* Update active preset */}
+              {activePresetId && (() => {
+                const ap = presets.find(p => p.id === activePresetId)
+                if (!ap) return null
+                return (
+                  <button
+                    onClick={() => {
+                      useAppStore.setState(s => ({
+                        presets: s.presets.map(p => p.id === activePresetId ? { ...p, macros: s.macros } : p)
+                      }))
+                      showToast(`Updated "${ap.name}"`)
+                    }}
+                    className="text-[10px] px-2 py-1.5 rounded-lg border border-[var(--accent)]/40 text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors w-full text-left"
+                  >
+                    ↑ Update "{ap.name}"
+                  </button>
+                )
+              })()}
+
+              {/* Save as new */}
               <div className="flex gap-1.5">
                 <input
                   type="text"
                   value={name}
                   onChange={e => setName(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleSave()}
-                  placeholder="Save current macros as…"
+                  placeholder="Save as new preset…"
                   className="flex-1 text-xs"
                 />
                 <button
@@ -295,13 +314,14 @@ function PresetPanel() {
                 />
               )}
 
-              {/* Grouped preset list */}
-              {presets.length === 0 && (
-                <p className="text-[10px] text-[var(--muted)] text-center py-1">No presets yet</p>
-              )}
-              {filtered.length === 0 && presets.length > 0 && (
-                <p className="text-[10px] text-[var(--muted)] text-center py-1">No matches</p>
-              )}
+              {/* Grouped preset list — capped height so it doesn't crush the macro editor */}
+              <div className="max-h-44 overflow-y-auto flex flex-col gap-2 -mx-1 px-1">
+                {presets.length === 0 && (
+                  <p className="text-[10px] text-[var(--muted)] text-center py-1">No presets yet</p>
+                )}
+                {filtered.length === 0 && presets.length > 0 && (
+                  <p className="text-[10px] text-[var(--muted)] text-center py-1">No matches</p>
+                )}
 
               {sortedCats.map(cat => {
                 const items = grouped.get(cat)!
@@ -349,6 +369,7 @@ function PresetPanel() {
                   </div>
                 )
               })}
+              </div>{/* end scrollable preset list */}
 
               {/* Starter library */}
               {presets.length < 30 && (
