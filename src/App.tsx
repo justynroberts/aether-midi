@@ -44,27 +44,18 @@ export default function App() {
     let lastFrameTime = 0
 
     // --- Hand stabilization ---
-    const LABEL_BUF_SIZE = 8    // majority-vote window in frames (~133ms @ 60fps)
-    const GHOST_FRAMES   = 2    // hold last hand N frames on brief drop-out
-    const LM_ALPHA       = 0.5  // landmark IIR blend per frame (0=frozen, 1=raw)
+    const GHOST_FRAMES = 2    // hold last hand N frames on brief drop-out
+    const LM_ALPHA     = 0.5  // landmark IIR blend per frame (0=frozen, 1=raw)
 
     interface SlotState {
-      labels: Array<'left' | 'right'>
       smoothedLms: Landmark[] | null
       ghost: number
       lastHand: TrackedHand | null
     }
     const slots: SlotState[] = [
-      { labels: [], smoothedLms: null, ghost: 0, lastHand: null },
-      { labels: [], smoothedLms: null, ghost: 0, lastHand: null },
+      { smoothedLms: null, ghost: 0, lastHand: null },
+      { smoothedLms: null, ghost: 0, lastHand: null },
     ]
-
-    function voteLabel(slot: SlotState, raw: 'left' | 'right'): 'left' | 'right' {
-      slot.labels.push(raw)
-      if (slot.labels.length > LABEL_BUF_SIZE) slot.labels.shift()
-      const leftVotes = slot.labels.filter(l => l === 'left').length
-      return leftVotes * 2 >= slot.labels.length ? 'left' : 'right'
-    }
 
     function applyLmSmooth(slot: SlotState, lms: Landmark[]): Landmark[] {
       if (!slot.smoothedLms) { slot.smoothedLms = lms.map(l => ({ ...l })); return slot.smoothedLms }
@@ -80,7 +71,7 @@ export default function App() {
     }
 
     function clearSlot(slot: SlotState) {
-      slot.labels = []; slot.smoothedLms = null; slot.ghost = 0; slot.lastHand = null
+      slot.smoothedLms = null; slot.ghost = 0; slot.lastHand = null
     }
 
     async function init() {
@@ -194,11 +185,10 @@ export default function App() {
         for (let i = 0; i < 2; i++) {
           const slot = slots[i]
           if (i < detectedCount) {
-            const lms      = result.landmarks[i] as Landmark[]
-            const rawLabel = result.handednesses?.[i]?.[0]?.categoryName ?? 'Right'
-            // Mirror flip: camera "Left" = user's right hand (video is mirrored)
-            const rawHand    = (rawLabel === 'Left' ? 'right' : 'left') as 'left' | 'right'
-            const handedness = voteLabel(slot, rawHand)
+            const lms = result.landmarks[i] as Landmark[]
+            // Wrist x in the raw (unmirrored) frame: x<0.5 = left of raw = right side of mirrored display = user's right hand.
+            // More reliable than MediaPipe's handedness label, which flips with selfie cameras.
+            const handedness = (lms[0].x < 0.5 ? 'right' : 'left') as 'left' | 'right'
             const smoothed   = applyLmSmooth(slot, lms)
             const h: TrackedHand = { landmarks: smoothed, handedness, features: extractFeatures(smoothed) }
             slot.lastHand = h
@@ -229,7 +219,7 @@ export default function App() {
 
         // Thumbs-up gesture held 500ms → next bank
         const thumbsUpConf = Math.max(...hands.map(h => h.features.thumbsUp))
-        if (thumbsUpConf > 0.75) {
+        if (thumbsUpConf > 0.65) {
           thumbsUpHeldMs += dt
           if (thumbsUpHeldMs >= 500) {
             useAppStore.getState().nextBank()
@@ -392,7 +382,7 @@ function extractFeatures(lms: Landmark[]) {
   const thumbUp  = clamp((1 - thumbCurl)  * 1.4 - 0.2)
 
   const ext = (v: number) => v > 0.55 ? 1 : 0   // binary extended
-  const cur = (v: number) => v < 0.45 ? 0 : 1   // binary curled (inverted)
+  const cur = (v: number) => v < 0.45 ? 1 : 0   // binary curled: 1 when finger IS curled
   const fingersCount = (ext(indexUp) + ext(middleUp) + ext(ringUp) + ext(pinkyUp) + ext(thumbUp)) / 5
 
   // Wrist roll — angle of index→pinky MCP vector

@@ -334,15 +334,10 @@ function PresetPanel() {
                               title="Load preset"
                             >Load</button>
                             <button
-                              onClick={() => { setMacros(p.macros); savePreset(p.name + ' (copy)'); showToast('Duplicated') }}
-                              className="text-[9px] px-1.5 py-0.5 rounded text-[var(--text-dim)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors"
-                              title="Duplicate preset"
-                            >Dup</button>
-                            <button
                               onClick={() => handleShare(p)}
-                              className="text-[9px] px-1.5 py-0.5 rounded text-[var(--text-dim)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors"
+                              className="text-[9px] px-1 py-0.5 rounded text-[var(--text-dim)] hover:text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors"
                               title="Copy share code"
-                            >Share</button>
+                            >⎘</button>
                             <button
                               onClick={() => deletePreset(p.id)}
                               className="text-[9px] px-1 py-0.5 rounded text-[var(--muted)] hover:text-[var(--red)] transition-colors"
