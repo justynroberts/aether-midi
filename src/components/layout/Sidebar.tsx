@@ -472,7 +472,7 @@ function MacroRow({ macro, isEditing, onToggle, onEditToggle, onDelete }: MacroR
       initial={{ opacity:0, y:-6 }}
       animate={{ opacity:1, y:0 }}
       exit={{ opacity:0, y:-6 }}
-      className={`card overflow-hidden transition-opacity ${macro.enabled ? '' : 'opacity-50'}`}
+      className={`card transition-opacity ${macro.enabled ? '' : 'opacity-50'}`}
     >
       <div className="flex items-center gap-2 px-3 pt-2.5 pb-1.5">
         <span className="w-2 h-2 rounded-full shrink-0" style={{ background: macro.color }} />
@@ -761,7 +761,14 @@ function MacroEditor({ macro, onUpdate }: MacroEditorProps) {
 
       {/* MIDI output range */}
       <div>
-        <p className="field-label">MIDI Output</p>
+        <div className="flex items-center justify-between mb-1">
+          <p className="field-label mb-0">MIDI Output</p>
+          <button
+            onClick={() => updateMapping({ midiMin: macro.mapping.midiMax, midiMax: macro.mapping.midiMin })}
+            className="text-[9px] text-[var(--text-dim)] hover:text-[var(--accent)] transition-colors"
+            title="Invert range"
+          >⇅ Invert</button>
+        </div>
         <div className="flex gap-2 items-center">
           <span className="text-[10px] text-[var(--text-dim)] w-5">Min</span>
           <input type="number" min={0} max={127}
