@@ -44,18 +44,10 @@ export default function App() {
     let lastFrameTime = 0
 
     // --- Hand stabilization ---
-    const GHOST_FRAMES = 2    // hold last hand N frames on brief drop-out
-    const LM_ALPHA     = 0.5  // landmark IIR blend per frame (0=frozen, 1=raw)
+    const LM_ALPHA = 0.5  // landmark IIR blend per frame (0=frozen, 1=raw)
 
-    interface SlotState {
-      smoothedLms: Landmark[] | null
-      ghost: number
-      lastHand: TrackedHand | null
-    }
-    const slots: SlotState[] = [
-      { smoothedLms: null, ghost: 0, lastHand: null },
-      { smoothedLms: null, ghost: 0, lastHand: null },
-    ]
+    interface SlotState { smoothedLms: Landmark[] | null }
+    const slots: SlotState[] = [{ smoothedLms: null }, { smoothedLms: null }]
 
     function applyLmSmooth(slot: SlotState, lms: Landmark[]): Landmark[] {
       if (!slot.smoothedLms) { slot.smoothedLms = lms.map(l => ({ ...l })); return slot.smoothedLms }
@@ -70,9 +62,8 @@ export default function App() {
       return s
     }
 
-    function clearSlot(slot: SlotState) {
-      slot.smoothedLms = null; slot.ghost = 0; slot.lastHand = null
-    }
+    // Tracks which macros fired last frame so we can send a release when hand is lost
+    const macroWasActive: Record<string, boolean> = {}
 
     async function init() {
       // Start camera
@@ -117,7 +108,7 @@ export default function App() {
           // Reset smoothing on bank switch (UI clicks, not just keyboard)
           useAppStore.subscribe(
             (s) => s.activeBankSlot,
-            () => { resetSmoothed.current = true; slots.forEach(clearSlot) }
+            () => { resetSmoothed.current = true; slots.forEach(s => { s.smoothedLms = null }) }
           )
 
           // Resolve immediately for current selection
@@ -180,25 +171,18 @@ export default function App() {
 
         const detectedCount = result.landmarks?.length ?? 0
 
-        // Build stabilized hands: majority-vote label + landmark IIR + ghost hold on drop-out
+        // Build stabilized hands: wrist-position handedness + landmark IIR smoothing
         const hands: TrackedHand[] = []
         for (let i = 0; i < 2; i++) {
           const slot = slots[i]
           if (i < detectedCount) {
             const lms = result.landmarks[i] as Landmark[]
-            // Wrist x in the raw (unmirrored) frame: x<0.5 = left of raw = right side of mirrored display = user's right hand.
-            // More reliable than MediaPipe's handedness label, which flips with selfie cameras.
+            // Wrist x in raw (unmirrored) frame: x<0.5 = left of raw = right side of mirrored display = user's right hand.
             const handedness = (lms[0].x < 0.5 ? 'right' : 'left') as 'left' | 'right'
             const smoothed   = applyLmSmooth(slot, lms)
-            const h: TrackedHand = { landmarks: smoothed, handedness, features: extractFeatures(smoothed) }
-            slot.lastHand = h
-            slot.ghost    = GHOST_FRAMES
-            hands.push(h)
-          } else if (slot.ghost > 0 && slot.lastHand) {
-            slot.ghost--
-            hands.push(slot.lastHand)
+            hands.push({ landmarks: smoothed, handedness, features: extractFeatures(smoothed) })
           } else {
-            clearSlot(slot)
+            slot.smoothedLms = null  // reset IIR when slot goes empty
           }
         }
 
@@ -237,7 +221,16 @@ export default function App() {
           for (const macro of activeMacros) {
             const target = macro.mapping.hand ?? 'any'
             const hand = target === 'any' ? hands[0] : hands.find((h) => h.handedness === target)
-            if (!hand) continue
+            if (!hand) {
+              // Send midiMin once when the target hand is lost so the DAW fader doesn't hold its last value
+              if (macroWasActive[macro.id]) {
+                const ch = (macro.mapping.channel - 1) & 0x0f
+                midiOutput.send([0xb0 | ch, macro.mapping.ccNumber, macro.mapping.midiMin])
+                delete smoothed[macro.id]
+              }
+              macroWasActive[macro.id] = false
+              continue
+            }
 
             // Gesture filter — each active finger constraint contributes to confidence
             const gf = macro.mapping.gestureFilter
@@ -278,6 +271,7 @@ export default function App() {
             )))
             const ch = (macro.mapping.channel - 1) & 0x0f
             midiOutput.send([0xb0 | ch, macro.mapping.ccNumber, midiVal])
+            macroWasActive[macro.id] = true
             markMidiActivity()
           }
         }
